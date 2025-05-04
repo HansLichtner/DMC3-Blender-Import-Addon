@@ -315,7 +315,7 @@ def setup_animation(context: bpy.types.Context, filepath: Path, Mot: Motion) -> 
 
     # Assign action and update timeline
     rig.animation_data_create().action = action
-    common.scene.frame_timeline(context)
+    frame_timeline(context)
 
 #=====================================================================
 #   Import

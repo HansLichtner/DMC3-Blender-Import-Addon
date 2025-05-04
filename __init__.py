@@ -29,7 +29,7 @@ else:
 
 class DMC3_OT_import_model(Operator, ImportHelper):
     bl_idname = "import_scene.dmc3_model"
-    bl_label = "DMC3 Model (.mod/.scm)"
+    bl_label = "DMC3 Model/Stage (.mod/.scm)"
     filename_ext = ".mod"
     filter_glob: StringProperty(default="*.mod;*.scm", options={'HIDDEN'})
 
@@ -48,18 +48,6 @@ class DMC3_OT_import_motion(Operator, ImportHelper):
         motion.Import(context, self.filepath)
         return {'FINISHED'}
 
-
-class DMC3_OT_import_stage(Operator, ImportHelper):
-    bl_idname = "import_scene.dmc3_stage"
-    bl_label = "DMC3 Stage (.scm)"
-    filename_ext = ".scm"
-    filter_glob: StringProperty(default="*.scm", options={'HIDDEN'})
-
-    def execute(self, context):
-        model.Import(context, self.filepath)
-        return {'FINISHED'}
-
-
 # ----------------------------
 # Import Submenu
 # ----------------------------
@@ -72,8 +60,6 @@ class DMC_HD_MT_import_submenu(Menu):
         layout = self.layout
         layout.operator(DMC3_OT_import_model.bl_idname)
         layout.operator(DMC3_OT_import_motion.bl_idname)
-        layout.operator(DMC3_OT_import_stage.bl_idname)
-
 
 def menu_func_import(self, context):
     self.layout.menu(DMC_HD_MT_import_submenu.bl_idname)
@@ -86,7 +72,6 @@ def menu_func_import(self, context):
 classes = (
     DMC3_OT_import_model,
     DMC3_OT_import_motion,
-    DMC3_OT_import_stage,
     DMC_HD_MT_import_submenu,
 )
 
