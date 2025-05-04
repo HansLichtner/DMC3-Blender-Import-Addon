@@ -1,5 +1,5 @@
 bl_info = {
-    "name": "DMC 3 Tools",
+    "name": "DMC3: Tools",
     "author": "",
     "version": (1, 0, 2),
     "blender": (4, 0, 0),
