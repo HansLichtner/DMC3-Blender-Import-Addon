@@ -11,6 +11,9 @@ import mathutils
 from mathutils import Vector, Matrix
 from math import radians
 
+# Path Hack
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 from common.meshutils import ParseVerts
 from common.io import (
     ReadSInt16, ReadSInt32, ReadSInt64,
@@ -76,8 +79,7 @@ class Mesh:
 
         
     def ParseVerts(self):
-        meshutils.ParseVerts(self, self.f, model)
-        
+        ParseVerts(self, self.f, model)
     
 #=====================================================================
 #   Object

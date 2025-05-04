@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 # Import and reload common utilities
 import common
 from common.io import ReadUInt16, ReadUInt32, ReadFloat, ReadSInt32
+from common.scene import frame_timeline
 importlib.reload(common.io)
 
 #=====================================================================
