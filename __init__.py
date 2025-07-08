@@ -42,7 +42,7 @@ class DMC3_OT_import_motion(Operator, ImportHelper):
     bl_idname = "import_scene.dmc3_motion"
     bl_label = "DMC3 Motion (.mot)"
     filename_ext = ".mot"
-    filter_glob: StringProperty(default="*.mot", options={'HIDDEN'})
+    filter_glob: StringProperty(default="*.mot*", options={'HIDDEN'})
 
     def execute(self, context):
         motion.Import(context, self.filepath)
