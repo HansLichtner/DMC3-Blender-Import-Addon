@@ -1,8 +1,8 @@
 bl_info = {
-    "name": "DMC3: Tools",
+    "name": "DMC 3 Tools",
     "author": "",
     "version": (1, 0, 2),
-    "blender": (4, 0, 0),
+    "blender": (3, 0, 0),
     "location": "File > Import > DMC HD",
     "description": "Import DMC 3 models/stages and animations.",
     "category": "Import-Export",
@@ -42,7 +42,7 @@ class DMC3_OT_import_motion(Operator, ImportHelper):
     bl_idname = "import_scene.dmc3_motion"
     bl_label = "DMC3 Motion (.mot)"
     filename_ext = ".mot"
-    filter_glob: StringProperty(default="*.mot*", options={'HIDDEN'})
+    filter_glob: StringProperty(default="*.mot", options={'HIDDEN'})
 
     def execute(self, context):
         motion.Import(context, self.filepath)
