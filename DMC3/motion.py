@@ -4,6 +4,7 @@ import os
 import sys
 import bpy
 import importlib
+import math
 
 from enum import IntEnum
 from io import BufferedReader
@@ -77,6 +78,9 @@ def Hermite(currentFrameTime: float, p0_value: float, p0_time: float, p0_outTang
          + (time0a * 3.0 - (timeStep * tCubed + timeStep * tCubed)) * p1_value \
          + (tCubed - time1a) * p1_inTangent
 
+# Adicione esta função de interpolação linear:
+def linear_interpolate(a: float, b: float, factor: float) -> float:
+    return a + (b - a) * factor
 
 #=====================================================================
 #   Keyframe
@@ -156,7 +160,7 @@ class Track:
                 return Hermite(float(frameTime), p0.value, p0.timeIndex, p0.outTanget, p1.value, p1.timeIndex, p1.inTangent)
 
             case Compression.LINEAR_INT16 | Compression.LINEAR_FLOAT32:
-                return bl_math.lerp(p0.value, p1.value, t)
+                return linear_interpolate(p0.value, p1.value, t)
 
 
 #=====================================================================
