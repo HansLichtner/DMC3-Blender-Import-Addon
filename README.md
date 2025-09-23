@@ -6,7 +6,14 @@
 
 A updated fork of [Deshayu](https://github.com/deshayu)'s [DMC3 Tools](https://github.com/deshayu/DMC3HDC-Import-Tools).
 
+---
+
 > ⚠️ **Imported models generate one generic material per mesh** — no material names or texture assignments (yet). ⚠️
+
+---
+
+## Compatibility
+* Blender 3.0.0+
 
 ## Supported Imports
 - Models (`.mod`)
