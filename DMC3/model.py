@@ -1,3 +1,4 @@
+#DMC3\model.py:
 from __future__ import annotations
 
 import sys
@@ -10,23 +11,28 @@ import bpy
 import mathutils
 from math import radians
 from mathutils import Vector, Matrix
+from io import BufferedReader, BufferedWriter
 
-# Path Hack
+# Path Hack (preservado)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-# Import internal modules
-import common
-from common.meshutils import ParseVerts
-from common.io import (
-    ReadSInt16, ReadSInt32, ReadSInt64,
-    ReadUByte, ReadByte, ReadFloat, ReadString
-)
+# Import internal modules using relative imports
+from ..common.meshutils import ParseVerts
+from ..common.io import ReadSInt16, ReadSInt32, ReadSInt64, ReadUByte, ReadByte, ReadFloat, ReadString, byte, ubyte, int16, int32, int64, uint16, uint32, uint64, offs_t
 
-importlib.reload(common.io)
-      
-#=====================================================================
+from ..common import scene as cs
+
+def safe_reload(module_name: str):
+    m = sys.modules.get(module_name)
+    if m:
+        try:
+            importlib.reload(m)
+        except Exception as e:
+            cs.log_warn(f"Could not reload {module_name}: {e}")
+
+safe_reload(sys.modules.get('..common.io', sys.modules.get('common.io', None)) or sys)  # best effort to reload if present
+
 #   Mesh
-#=====================================================================
 class Mesh:
     f: BufferedReader
     meshIdx: int
@@ -49,9 +55,10 @@ class Mesh:
     faces: list
     vertGrp: list
 
-    def __init__(self, f: BufferedReader, meshIdx: int):
+    def __init__(self, f: BufferedReader, meshIdx: int, parentModel: "Model"):
         self.meshIdx = meshIdx
         self.f = f
+        self.parentModel = parentModel
         self.vertCount = ReadSInt16(f)
         self.texInd = ReadSInt16(f)
         f.seek(12, 1)
@@ -59,7 +66,7 @@ class Mesh:
         self.normalsOffs = ReadSInt64(f)
         self.UVsOffs = ReadSInt64(f)
         
-        if model.Id != "SCM ":
+        if self.parentModel.Id != "SCM ":
             self.boneIndiciesOffs = ReadSInt64(f)
             self.weightsOffs = ReadSInt64(f)
             f.seek(8, 1)
@@ -70,7 +77,7 @@ class Mesh:
         self.ukn = ReadSInt64(f)
         f.seek(8, 1)
        
-        self.positions = [Vector]*self.vertCount
+        self.positions = []
         self.normals = []
         self.UVs = []
         self.boneIndicies = []
@@ -78,11 +85,9 @@ class Mesh:
         self.vertColour = []
         self.triSkip = []
         self.faces = []
-        self.vertGrp = [None]*model.boneCount
-    
-#=====================================================================
+        self.vertGrp = [None] * getattr(self.parentModel, "boneCount", 0)
+
 #   Object
-#=====================================================================
 class Object:
     f: BufferedReader
     objectIdx: int
@@ -113,16 +118,12 @@ class Object:
         self.radius = ReadFloat(f)
         # self.meshes = []
 
-
-    def ParseMeshes(self):
+    def ParseMeshes(self, parentModel: "Model"):
         f = self.f
         f.seek(self.mshOffs)
+        self.meshes = [Mesh(f, i, parentModel) for i in range(self.meshCount)]
 
-        self.meshes = [Mesh(f, i) for i in range(self.meshCount)]
-
-#=====================================================================
 #   Skeleton
-#=====================================================================
 class Bone:
     position: Vector
     idx: int
@@ -134,10 +135,8 @@ class Bone:
         self.idx = idx
         self.parent = None
 
-
 class Skeleton:
     bones: list[Bone]
-    
     
     def __init__(self, f: BufferedReader, boneCount: int):
         base_offset = f.tell()
@@ -174,10 +173,7 @@ class Skeleton:
         for i in range(boneCount):
             self.bones[self.hierarchyOrder[i]].parent = self.hierarchy[i]
 
-
-#=====================================================================
 #   Model file
-#=====================================================================
 class Model:
     objectCount: ubyte
     objects: list[Object]
@@ -196,6 +192,7 @@ class Model:
         self.skeletonOffs = ReadSInt64(f)
         self.objects = []
         self.skeleton: Skeleton
+        self.trackGroups = []
 
     def ParseObjects(self):
         self.f.seek(0x40)
@@ -204,7 +201,7 @@ class Model:
 
     def ParseMeshes(self):
         for obj in self.objects:
-            obj.ParseMeshes()
+            obj.ParseMeshes(self)
 
     def ParseVerts(self):
         for obj in self.objects:
@@ -218,34 +215,30 @@ class Model:
         self.f.seek(self.skeletonOffs)
         self.skeleton = Skeleton(self.f, self.boneCount)
 
-#=====================================================================
 #region
-#=====================================================================
 basis_mat: Matrix = Matrix([
     [0.01, 0.0, 0.0, 0.0], 
     [0.0, 0.01, 0.0, 0.0], 
     [0.0, 0.0, 0.01, 0.0], 
-    [0.0, 0.0, 0.0, 0.0]
+    [0.0, 0.0, 0.0, 1.0]
 ])
 
 correction_mat: Matrix = Matrix([
     [1.0, 0.0, 0.0, 0.0], 
     [0.0, 0.0, -1.0, 0.0], 
     [0.0, 1.0, 0.0, 0.0], 
-    [0.0, 0.0, 0.0, 0.0]
+    [0.0, 0.0, 0.0, 1.0]
 ])
 
 # Local and global correction rotations
 correction_local = mathutils.Euler((radians(90), 0, radians(0))).to_matrix().to_4x4()
 correction_global = mathutils.Euler((radians(-90), radians(0), 0)).to_matrix().to_4x4()
 
-#=====================================================================
 #   Setup armature
-#=====================================================================
 def setup_bones(context, armature: bpy.types.Armature, joints: list[Bone], armature_object: bpy.types.Object) -> list[bpy.types.EditBone]:
     bones: list[bpy.types.EditBone] = []
 
-    bpy.ops.object.mode_set(mode='EDIT')
+    cs.safe_set_mode(context, armature_object, 'EDIT')
 
     # Create bones
     for joint in joints:
@@ -282,14 +275,12 @@ def setup_bones(context, armature: bpy.types.Armature, joints: list[Bone], armat
     if 'basis_mat' in globals():
         armature.transform(basis_mat)
 
-    bpy.ops.object.mode_set(mode='OBJECT')
+    cs.safe_set_mode(context, armature_object, 'OBJECT')
 
     return bones
 
-#=====================================================================
-# Setup objects 
-#=====================================================================
-def setup_objects(Mod: Model, model_collection: bpy.types.Collection, armature_object: bpy.types.Object) -> list[bpy.types.Object]:
+# Setup objects
+def setup_objects(context: bpy.types.Context, Mod: Model, model_collection: bpy.types.Collection, armature_object: bpy.types.Object) -> list[bpy.types.Object]:
     objects: list[bpy.types.Object] = []
 
     # Create or fetch vertex color material
@@ -321,7 +312,7 @@ def setup_objects(Mod: Model, model_collection: bpy.types.Collection, armature_o
                 objects.append(object)
 
             model_collection.objects.link(mesh_object)
-            bpy.context.view_layer.objects.active = mesh_object
+            context.view_layer.objects.active = mesh_object
 
             # Set custom normals
             custom_normals: list = []
@@ -332,12 +323,13 @@ def setup_objects(Mod: Model, model_collection: bpy.types.Collection, armature_o
             mesh_data.normals_split_custom_set(custom_normals)
 
             # Setup UVs
-            if msh.UVs:
-                mesh_data.uv_layers.new(name='UV_0')
-                uv_data = mesh_data.uv_layers[0].data
-                for u in range(len(uv_data)):
-                    uv_data[u].uv = msh.UVs[mesh_data.loops[u].vertex_index]
-                mesh_data.calc_tangents(uvmap="UV_0")
+            if msh.UVs and len(msh.UVs) == len(mesh_data.vertices):
+                uv_layer = mesh_data.uv_layers.new(name="UV_0")
+                uv_data = uv_layer.data
+                for u, loop in enumerate(mesh_data.loops):
+                    uv_data[u].uv = msh.UVs[loop.vertex_index]
+                if "UV_0" in mesh_data.uv_layers:
+                    mesh_data.calc_tangents(uvmap="UV_0")
 
             # Create vertex groups for bones
             for b in range(Mod.skeleton.boneCount):
@@ -345,28 +337,42 @@ def setup_objects(Mod: Model, model_collection: bpy.types.Collection, armature_o
 
             # Weight painting
             if Mod.Id != "SCM ":
+                import common.scene as cs
                 for vert in mesh_data.vertices:
                     v = vert.index
                     bone_indices = msh.boneIndicies[v]
                     weights = msh.boneWeights[v]
                     for idx, b in enumerate(bone_indices):
-                        vgroup = mesh_object.vertex_groups[b]
-                        vgroup.add([v], weights[idx], 'REPLACE')
+                        if isinstance(b, int):
+                            bone_idx = b
+                        else:
+                            try:
+                                bone_idx = int(b[0])
+                            except Exception:
+                                bone_idx = 0
+
+                        if bone_idx >= len(mesh_object.vertex_groups):
+                            cs.log_warn(f"bone index {bone_idx} out of range for mesh {mesh_object.name}. Clamping to {len(mesh_object.vertex_groups)-1}")
+                            bone_idx = max(0, len(mesh_object.vertex_groups) - 1)
+
+                        vgroup = mesh_object.vertex_groups[bone_idx]
+                        w = weights[idx] if idx < len(weights) else 1.0
+                        vgroup.add([v], w, 'REPLACE')
 
                 material = bpy.data.materials.new(name=mesh_object.name)
                 material.diffuse_color = [random.uniform(0.0, 1.0) for _ in range(3)] + [1.0]
-                mesh_data.materials.append(material)
+                mesh_object.data.materials.append(material)
 
             else:
                 vcol_layer = mesh_data.vertex_colors.new(name='Baked Lighting')
                 for loop, col in zip(mesh_data.loops, vcol_layer.data):
                     col.color = msh.vertColour[loop.vertex_index]
-                mesh_data.materials.append(material_vert_col)
+                mesh_object.data.materials.append(material_vert_col)
 
             mesh_data.transform(basis_mat)
 
             # Attach to armature
-            bpy.ops.object.mode_set(mode='OBJECT')
+            cs.safe_set_mode(context, armature_object, 'OBJECT')
             modifier = mesh_object.modifiers.new(type='ARMATURE', name="Armature")
             modifier.object = armature_object
 
@@ -374,9 +380,7 @@ def setup_objects(Mod: Model, model_collection: bpy.types.Collection, armature_o
 
     return objects
 
-#=====================================================================
 #   Setup parsed models
-#=====================================================================
 def setup_model(context: bpy.types.Context, filepath: Path, Mod: Model) -> None:
     # Setup collection
     file_name: str = Path(filepath).name
@@ -398,11 +402,11 @@ def setup_model(context: bpy.types.Context, filepath: Path, Mod: Model) -> None:
     bones: list[bpy.types.EditBone] = setup_bones(context, armature, joints, armature_object)
 
     # Setup objects
-    objects: list[bpy.types.Object] = setup_objects(Mod, model_collection, armature_object)
+    objects: list[bpy.types.Object] = setup_objects(context, Mod, model_collection, armature_object)
 
     if Mod.Id != "MOD ":
-        bpy.context.view_layer.objects.active = armature_object
-        bpy.ops.object.mode_set(mode='POSE')
+        context.view_layer.objects.active = armature_object
+        cs.safe_set_mode(context, armature_object, 'POSE')
 
         for i, child_idx in enumerate(Mod.skeleton.childIndices):
             if child_idx != -1:
@@ -414,14 +418,12 @@ def setup_model(context: bpy.types.Context, filepath: Path, Mod: Model) -> None:
                 obj.parent_bone = bone.name
                 obj.matrix_world = mathutils.Matrix.Translation((bone.matrix @ obj.matrix_local).translation)
 
-        bpy.ops.object.mode_set(mode='OBJECT')
+        cs.safe_set_mode(context, armature_object, 'OBJECT')
 
     # Rotate the model upright
     armature_object.rotation_euler.rotate_axis('X', radians(90.))
 
-#=====================================================================
 #   Import
-#=====================================================================
 def Import(context: bpy.types.Context, filepath: Path):
     with open(filepath, 'rb') as f:
         global model
@@ -432,4 +434,14 @@ def Import(context: bpy.types.Context, filepath: Path):
         model.ParseSkeleton()
         setup_model(context, filepath, model)
 
+        if not getattr(model, "trackGroups", None):
+            cs.log_warn("No track groups found in motion file.")
+            return {'CANCELLED'}
+        setup_animation(context, filepath, model)
+        
+        if not hasattr(model, "trackGroups"):
+            cs.log_warn(f"Model missing trackGroups attribute: {type(model)}")
+
     return {'FINISHED'}
+
+

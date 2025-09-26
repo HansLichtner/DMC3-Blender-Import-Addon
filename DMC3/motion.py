@@ -1,3 +1,4 @@
+#DMC3\motion.py:
 from __future__ import annotations
 
 import os
@@ -15,12 +16,11 @@ from typing import NewType
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Import and reload common utilities
-import common
-from common.io import ReadUInt16, ReadUInt32, ReadFloat, ReadSInt32
-from common.scene import frame_timeline
-importlib.reload(common.io)
-
-#=====================================================================
+from ..common.io import (
+    ReadSInt16, ReadSInt32, ReadSInt64, ReadUByte, ReadByte, ReadFloat,
+    ReadString, byte, ubyte, int16, int32, int64, uint16, uint32, uint64, offs_t
+)
+from ..common import scene as cs
 
 # Track type flags
 class TrackFlags(IntEnum):
@@ -63,9 +63,7 @@ AxisZ = NewType('AxisZ', Axis.Z)
         
 EPSILON_16 = (0.000015259022) # 1./65535.
 
-#=====================================================================
 #   Hermite spline interpolation
-#=====================================================================
 def Hermite(currentFrameTime: float, p0_value: float, p0_time: float, p0_outTangent: float, p1_value: float, p1_time: float, p1_inTangent: float) -> float:
     t: float = currentFrameTime - p0_time
     timeStep: float = 1.0 / (p1_time - p0_time)
@@ -82,9 +80,7 @@ def Hermite(currentFrameTime: float, p0_value: float, p0_time: float, p0_outTang
 def linear_interpolate(a: float, b: float, factor: float) -> float:
     return a + (b - a) * factor
 
-#=====================================================================
 #   Keyframe
-#=====================================================================
 class Keyframe:
     timeIndex: uint16
     uknFlag: int
@@ -107,10 +103,7 @@ class Keyframe:
             self.inTangent = ReadUInt16(f) * track.inRange * EPSILON_16 + track.inTMin
             self.outTanget = ReadUInt16(f) * track.outRange * EPSILON_16 + track.outTMin
 
-
-#=====================================================================
 #   Track
-#=====================================================================
 class Track:
     transformType: tuple[str, TRACK_TYPE]
     trackAxis: Axis
@@ -126,9 +119,8 @@ class Track:
     outRange: float
     keys: list[Keyframe]
 
-
     def __init__(self, type: tuple[str, TRACK_TYPE], trackAxis: Axis, f: BufferedReader):
-        # print( f"   Reading track at {hex( f.tell() )}" )
+        # cs.log_info(f f"   Reading track at {hex( f.tell() )}" )
         self.size = ReadUInt16(f)
         self.keyCount = ReadUInt16(f)
         self.comprsnType = Compression( ReadUInt16(f) )
@@ -147,7 +139,7 @@ class Track:
             self.keys = [ Keyframe(self, f) for _ in range(self.keyCount) ]
 
         elif self.comprsnType != Compression.LINEAR_INT16:
-            print( f" Unsupported compression type at {hex( f.tell() )}" )
+            cs.log_warn( f" Unsupported compression type at {hex( f.tell() )}" )
             return
 
     
@@ -162,10 +154,7 @@ class Track:
             case Compression.LINEAR_INT16 | Compression.LINEAR_FLOAT32:
                 return linear_interpolate(p0.value, p1.value, t)
 
-
-#=====================================================================
 #   Track groups per bone
-#=====================================================================
 class TrackGroup:
     def __init__(self, motion: Motion, track_flags: int, bone_idx: int, f: BufferedReader):
         self.boneIdx = bone_idx
@@ -188,9 +177,7 @@ class TrackGroup:
             if track_flags & flag:
                 self.tracks.append(Track((transform, track_type), trackAxis=axis, f=f))
 
-#=====================================================================
 #   Motion
-#=====================================================================
 class Motion:
     f: BufferedReader
     size: uint32
@@ -205,7 +192,6 @@ class Motion:
     ukn2: list[uint16]
     trackGroups: list[TrackGroup]
     trackTypes: list[uint16]
-
 
     def __init__(self, f: BufferedReader):
         self.f = f
@@ -226,17 +212,14 @@ class Motion:
         while f.tell() < self.size:
             self.ukn2.append( ReadUInt16(f) )
 
-
     def ParseTracks(self):
         for boneIdx, trackFlags in enumerate(self.trackTypes):
             
             if trackFlags:
-                # print(boneIdx)
+                # cs.log_info(fboneIdx)
                 self.trackGroups.append(TrackGroup(self, trackFlags, boneIdx, self.f))
 
-#=====================================================================
 #   Setup parsed animations
-#=====================================================================
 def setup_animation(context: bpy.types.Context, filepath: Path, Mot: Motion) -> None:
     scene: bpy.types.Scene = bpy.data.scenes["Scene"]
     scene.render.fps = 60
@@ -244,22 +227,28 @@ def setup_animation(context: bpy.types.Context, filepath: Path, Mot: Motion) -> 
     scene.frame_end = int(Mot.endFrame)
 
     # Get rig (armature object)
-    rig = (
-        context.object if context.object.type == 'ARMATURE'
-        else context.scene.objects["Armature_object"]
-    )
-    bpy.context.view_layer.objects.active = rig
+    rig = None
+    if getattr(context.object, "type", "") == 'ARMATURE':
+        rig = context.object
+    else:
+        rig = context.scene.objects.get("Armature_object")
+
+    if rig is None:
+        cs.log_error("Could not find armature object 'Armature_object' to bind animation.")
+        return
+
+    context.view_layer.objects.active = rig
 
     # Set rotation mode for pose bones
     for bone in rig.pose.bones:
         bone.rotation_mode = "XYZ"
 
     # Store rest matrices in edit mode
-    bpy.ops.object.mode_set(mode='EDIT')
+    cs.safe_set_mode(context, rig,'EDIT')
     rest_matrices = {bone.name: bone.matrix.copy() for bone in rig.data.edit_bones}
-    bpy.ops.object.mode_set(mode='POSE')
+    cs.safe_set_mode(context, rig,'POSE')
     rest_quaternions = {name: mat.to_quaternion() for name, mat in rest_matrices.items()}
-    bpy.ops.object.mode_set(mode='OBJECT')
+    cs.safe_set_mode(context, rig,'OBJECT')
 
     # Create new action
     action_name = os.path.basename(filepath)
@@ -321,17 +310,24 @@ def setup_animation(context: bpy.types.Context, filepath: Path, Mot: Motion) -> 
     rig.animation_data_create().action = action
     frame_timeline(context)
 
-#=====================================================================
 #   Import
-#=====================================================================
 def Import(context, filepath):
     with open(filepath, 'rb') as file:
         motion = Motion(file)
+        # seek to end of motion block to reach extra header (if any)
         file.seek(motion.size, os.SEEK_SET)
 
+        # read remaining track count or additional headers if present
         track_count = ReadUInt32(file)
         motion.ParseTracks()
 
+        if not motion.trackGroups:
+            cs.log_warn("No track groups found in motion file.")
+            return {'CANCELLED'}
+
+        # only call setup once, after parsing tracks
         setup_animation(context, filepath, motion)
 
     return {'FINISHED'}
+
+
