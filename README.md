@@ -8,7 +8,7 @@ An improved fork of [Deshayu](https://github.com/deshayu)'s [DMC3HDC Import Tool
 
 ---
 
-> ⚠️ **Imported models generate one generic material per mesh** — no material names or texture assignments (yet). ⚠️
+> ⚠️ **Imported models with one generic material per mesh** — no material names or texture assignments (yet). ⚠️
 
 ---
 
