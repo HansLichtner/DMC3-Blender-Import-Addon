@@ -1,117 +1,83 @@
 #__init__.py:
 bl_info = {
-    "name": "DMC3 Tools",
+    "name": "DMC3 Import",
     "author": "K0BR4",
     "version": (0, 3, 0),
     "blender": (4, 0, 0),
-    "location": "File > Import > DMC3 Tools",
+    "location": "File > Import > DMC3 Import",
     "description": "Import DMC3 models and animations (HD Collection compatible).",
     "category": "Import-Export",
+    "support": "COMMUNITY",
+    "doc_url": "https://github.com/HansLichtner/DMC3-Blender-Tools",
 }
 
+
+
+import os
+from pathlib import Path
+import importlib
+import traceback
 import bpy
-import importlib, sys
+from bpy.types import Operator
+from bpy_extras.io_utils import ImportHelper
+from bpy.props import StringProperty
 
-def safe_reload(module_name: str):
-    m = sys.modules.get(module_name)
-    if m:
-        try:
-            importlib.reload(m)
-        except Exception as e:
-            cs.log_warn(f"Could not reload {module_name}: {e}")
-
-# Use relative import to guarantee we get the local `common` package inside the addon
+# try relative imports (works when installed as add-on) and fallback to top-level (dev)
 try:
-    from .common import scene as cs
-except Exception as e:
-    # fallback: avoid crashing registration if logging can't be imported
-    cs = None
-    print(f"[DMC3] Could not import local common.scene: {e}")
-
-# Try to import DMC3 package and reload for dev iteration
-try:
-    from . import DMC3
     from .DMC3 import model, motion
-    safe_reload(DMC3)
-    safe_reload(DMC3.model)
-    safe_reload(DMC3.motion)
-except Exception as e:
-    if cs:
-        cs.log_error(f"DMC3 import failed: {e}")
-    else:
-        print(f"[DMC3] DMC3 import failed: {e}")
+except Exception:
+    import DMC3.model as model
+    import DMC3.motion as motion
 
-# Import the operator classes that actually exist in DMC3/operators.py
-# Import operator classes and callback from operators module
-from .DMC3.operators import (
-    DMC3_OT_importer,
-    DMC3_OT_importer_filter,
-    update_filter,
-)
+# Auto-reload while developing (Blender keeps modules loaded between installs)
+if "importlib" in globals():
+    try:
+        importlib.reload(model)
+        importlib.reload(motion)
+    except Exception:
+        pass
+
+class DMC3_OT_import(Operator, ImportHelper):
+    bl_idname = "import_scene.dmc3"
+    bl_label = "Import DMC3 (.mod/ .mot/ .scm)"
+    filename_ext = ".mod"
+    filter_glob: StringProperty(default="*.mod;*.scm;*.mot", options={'HIDDEN'})
+
+    def execute(self, context):
+        fp = Path(self.filepath)
+        ext = fp.suffix.lower()
+        try:
+            if ext in ('.mod', '.scm'):
+                # model.Import expects a pathlib.Path in this addon
+                return model.Import(context, fp)
+            elif ext == '.mot':
+                return motion.Import(context, fp)
+            else:
+                self.report({'WARNING'}, f"No importer for extension: {ext}")
+                return {'CANCELLED'}
+        except Exception as e:
+            self.report({'ERROR'}, f"Import failed: {e}")
+            print("".join(traceback.format_exception(type(e), e, e.__traceback__)))
+            return {'CANCELLED'}
+
 
 def menu_func_import(self, context):
-    self.layout.operator(DMC3_OT_importer.bl_idname, text="DMC3 Models (.mod/.scm/.mot)")
+    # single, top-level menu entry (no submenu)
+    self.layout.operator(DMC3_OT_import.bl_idname, text="DMC 3 (HD) Import (.mod/.scm/.mot)")
 
 classes = (
-    DMC3_OT_importer,
-    DMC3_OT_importer_filter,
+    DMC3_OT_import,
 )
 
 def register():
-    # register classes once — tolerante a re-registro (recarregamento de addon)
     for cls in classes:
-        try:
-            bpy.utils.register_class(cls)
-        except ValueError:
-            # já registrado (possivelmente por reload); tente desempilhar e registrar de novo
-            try:
-                bpy.utils.unregister_class(cls)
-                bpy.utils.register_class(cls)
-            except Exception:
-                # se falhar, ignore para evitar travar a inicialização do addon
-                pass
-        except Exception:
-            # qualquer outro erro não bloqueia os demais registros
-            pass
-
-    # append menu (protegido contra duplicação)
-    try:
-        bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
-    except Exception:
-        pass
-
-    # properties on Scene (only if not present) — centralizado aqui
-    if not hasattr(bpy.types.Scene, "FileType"):
-        bpy.types.Scene.FileType = bpy.props.EnumProperty(
-            items=(
-                ('MODEL', 'Model', 'model'),
-                ('MOTION', 'Motion', 'motion')
-            ),
-            name="File type",
-            default='MODEL',
-            update=update_filter
-        )
+        bpy.utils.register_class(cls)
+    bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
 
 def unregister():
-    # remove menu safely
-    try:
-        bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
-    except Exception:
-        pass
-
-    # unregister classes in reverse order
+    bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
     for cls in reversed(classes):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception:
-            pass
-
-    # remove scene property
-    if hasattr(bpy.types.Scene, "FileType"):
-        try:
-            delattr(bpy.types.Scene, "FileType")
-        except Exception:
-            pass
+        bpy.utils.unregister_class(cls)
 
 if __name__ == "__main__":
     register()
