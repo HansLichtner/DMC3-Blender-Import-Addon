@@ -63,7 +63,7 @@ class DMC3_OT_import(Operator, ImportHelper):
 
 def menu_func_import(self, context):
     # single, top-level menu entry (no submenu)
-    self.layout.operator(DMC3_OT_import.bl_idname, text="DMC 3 (HD) Import (.mod/.scm/.mot)")
+    self.layout.operator(DMC3_OT_import.bl_idname, text="DMC3 Import (.mod/.scm/.mot)")
 
 classes = (
     DMC3_OT_import,
