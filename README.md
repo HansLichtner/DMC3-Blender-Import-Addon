@@ -8,10 +8,6 @@ A updated fork of [Deshayu](https://github.com/deshayu)'s [DMC3 Tools](https://g
 
 ---
 
-> ⚠️ **Imported models generate one generic material per mesh** — no material names or texture assignments (yet). ⚠️
-
----
-
 ## Compatibility
 * Blender 3.0.0+
 
